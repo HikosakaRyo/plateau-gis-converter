@@ -12,6 +12,8 @@
     href: use_command_line.md
   - name: PostGISへのインポートする
     href: import_to_postgis.md
+  - name: トラブルシューティング
+    href: troubleshooting.md
   - name: 属性マッピングルール
     items:
     - name: 属性マッピングルールとは

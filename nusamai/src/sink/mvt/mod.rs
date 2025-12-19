@@ -144,54 +144,83 @@ impl DataSink for MvtSink {
 
         // TODO: refactoring
 
-        std::thread::scope(|s| {
-            // Slicing geometry along the tile boundaries
-            {
-                s.spawn(|| {
-                    if let Err(error) = geometry_slicing_stage(
-                        feedback,
-                        upstream,
-                        tile_id_conv,
-                        sender_sliced,
-                        &self.mvt_options,
-                    ) {
-                        feedback.fatal_error(error);
-                    }
-                });
-            }
+        let scope_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            std::thread::scope(|s| {
+                // Slicing geometry along the tile boundaries
+                {
+                    s.spawn(|| {
+                        if let Err(error) = geometry_slicing_stage(
+                            feedback,
+                            upstream,
+                            tile_id_conv,
+                            sender_sliced,
+                            &self.mvt_options,
+                        ) {
+                            feedback.fatal_error(error);
+                        }
+                    });
+                }
 
-            // Sort features by tile_id (using external sorter)
-            {
-                s.spawn(move || {
-                    if let Err(error) =
-                        feature_sorting_stage(feedback, receiver_sliced, sender_sorted)
-                    {
-                        feedback.fatal_error(error);
-                    }
-                });
-            }
-
-            // Group sorted features and write them into MVT tiles
-            {
-                let output_path = &self.output_path;
-                s.spawn(move || {
-                    // Run in a separate thread pool to avoid deadlocks
-                    let pool = rayon::ThreadPoolBuilder::new()
-                        .use_current_thread()
-                        .build()
-                        .unwrap();
-                    pool.install(|| {
+                // Sort features by tile_id (using external sorter)
+                {
+                    s.spawn(move || {
                         if let Err(error) =
-                            tile_writing_stage(output_path, feedback, receiver_sorted, tile_id_conv)
+                            feature_sorting_stage(feedback, receiver_sliced, sender_sorted)
                         {
                             feedback.fatal_error(error);
                         }
-                    })
-                });
-            }
-        });
+                    });
+                }
 
-        Ok(())
+                // Group sorted features and write them into MVT tiles
+                {
+                    let output_path = &self.output_path;
+                    s.spawn(move || {
+                        // Run in a separate thread pool to avoid deadlocks
+                        let pool = rayon::ThreadPoolBuilder::new()
+                            .use_current_thread()
+                            .build()
+                            .unwrap();
+                        pool.install(|| {
+                            if let Err(error) =
+                                tile_writing_stage(output_path, feedback, receiver_sorted, tile_id_conv)
+                            {
+                                feedback.fatal_error(error);
+                            }
+                        })
+                    });
+                }
+            })
+        }));
+
+        match scope_result {
+            Ok(_) => Ok(()),
+            Err(panic_payload) => {
+                let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic occurred".to_string()
+                };
+                
+                feedback.error(format!(
+                    "MVT conversion failed with panic. Common causes:\n\
+                     - Insufficient memory (try processing smaller datasets)\n\
+                     - Insufficient disk space (ensure adequate free space)\n\
+                     - File I/O errors (check permissions and disk health)\n\
+                     - Invalid geometry data in CityGML\n\
+                     Panic details: {}",
+                    panic_msg
+                ));
+                
+                Err(PipelineError::Other(format!(
+                    "MVT sink panicked during processing: {}. \
+                     Please check system resources (memory, disk space) and input data integrity.",
+                    panic_msg
+                )))
+            }
+        }
     }
 }
 
