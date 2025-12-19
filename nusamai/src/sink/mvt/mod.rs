@@ -196,29 +196,11 @@ impl DataSink for MvtSink {
         match scope_result {
             Ok(_) => Ok(()),
             Err(panic_payload) => {
-                let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                    s.to_string()
-                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "Unknown panic occurred".to_string()
-                };
-                
-                feedback.error(format!(
-                    "MVT conversion failed with panic. Common causes:\n\
-                     - Insufficient memory (try processing smaller datasets)\n\
-                     - Insufficient disk space (ensure adequate free space)\n\
-                     - File I/O errors (check permissions and disk health)\n\
-                     - Invalid geometry data in CityGML\n\
-                     Panic details: {}",
-                    panic_msg
-                ));
-                
-                Err(PipelineError::Other(format!(
-                    "MVT sink panicked during processing: {}. \
-                     Please check system resources (memory, disk space) and input data integrity.",
-                    panic_msg
-                )))
+                Err(crate::pipeline::handle_sink_panic(
+                    "MVT",
+                    panic_payload,
+                    feedback,
+                ))
             }
         }
     }

@@ -38,3 +38,38 @@ pub enum PipelineError {
 }
 
 pub type Result<T> = std::result::Result<T, PipelineError>;
+
+/// Handle a panic caught from a sink operation and convert it to a PipelineError
+///
+/// This function provides consistent error handling for panics that occur in sinks.
+/// It extracts the panic message and formats it with helpful troubleshooting information.
+pub fn handle_sink_panic(
+    sink_name: &str,
+    panic_payload: Box<dyn std::any::Any + Send>,
+    feedback: &Feedback,
+) -> PipelineError {
+    let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
+        s.to_string()
+    } else if let Some(s) = panic_payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "Unknown panic occurred".to_string()
+    };
+
+    feedback.error(format!(
+        "{} conversion failed with panic. Common causes:\n\
+         - Insufficient memory (try processing smaller datasets)\n\
+         - Insufficient disk space (ensure adequate free space)\n\
+         - File I/O errors (check permissions and disk health)\n\
+         - Invalid geometry data in CityGML\n\
+         Panic details: {}",
+        sink_name, panic_msg
+    ));
+
+    PipelineError::Other(format!(
+        "{} sink panicked during processing: {}. \
+         Please check system resources (memory, disk space) and input data integrity.",
+        sink_name, panic_msg
+    ))
+}
+
