@@ -48,6 +48,12 @@ pub fn handle_sink_panic(
     panic_payload: Box<dyn std::any::Any + Send>,
     feedback: &Feedback,
 ) -> PipelineError {
+    const COMMON_CAUSES: &str = "\
+        - Insufficient memory (try processing smaller datasets)\n\
+        - Insufficient disk space (ensure adequate free space)\n\
+        - File I/O errors (check permissions and disk health)\n\
+        - Invalid geometry data in CityGML";
+
     let panic_msg = if let Some(s) = panic_payload.downcast_ref::<&str>() {
         s.to_string()
     } else if let Some(s) = panic_payload.downcast_ref::<String>() {
@@ -57,18 +63,12 @@ pub fn handle_sink_panic(
     };
 
     feedback.error(format!(
-        "{} conversion failed with panic. Common causes:\n\
-         - Insufficient memory (try processing smaller datasets)\n\
-         - Insufficient disk space (ensure adequate free space)\n\
-         - File I/O errors (check permissions and disk health)\n\
-         - Invalid geometry data in CityGML\n\
-         Panic details: {}",
-        sink_name, panic_msg
+        "{} conversion failed with panic. Common causes:\n{}\nPanic details: {}",
+        sink_name, COMMON_CAUSES, panic_msg
     ));
 
     PipelineError::Other(format!(
-        "{} sink panicked during processing: {}. \
-         Please check system resources (memory, disk space) and input data integrity.",
+        "{} sink panicked: {}",
         sink_name, panic_msg
     ))
 }
