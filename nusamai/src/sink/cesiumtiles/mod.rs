@@ -782,8 +782,16 @@ fn tile_writing_stage(
                      Panic info: {:?}",
                     panic_info
                 ));
-                // Continue without texture atlas for this tile
-                // The tile will be created with geometry but no textures
+
+                // Remove texture references from all primitives since the atlas files don't exist
+                // This prevents "file not found" errors when trying to load non-existent atlas images
+                primitives = primitives
+                    .into_iter()
+                    .map(|(mut mat, prim_info)| {
+                        mat.base_texture = None;
+                        (mat, prim_info)
+                    })
+                    .collect();
             }
 
             // Write to file

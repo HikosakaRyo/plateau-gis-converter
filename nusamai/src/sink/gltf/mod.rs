@@ -690,8 +690,16 @@ impl DataSink for GltfSink {
                          Panic info: {:?}",
                         typename, panic_info
                     ));
-                    // Continue without texture atlas for this feature type
-                    // The glTF will be created with geometry but no textures
+
+                    // Remove texture references from all primitives since the atlas files don't exist
+                    // This prevents "file not found" errors when trying to load non-existent atlas images
+                    primitives = primitives
+                        .into_iter()
+                        .map(|(mut mat, prim_info)| {
+                            mat.base_texture = None;
+                            (mat, prim_info)
+                        })
+                        .collect();
                 }
 
                 // Write glTF (.glb)
