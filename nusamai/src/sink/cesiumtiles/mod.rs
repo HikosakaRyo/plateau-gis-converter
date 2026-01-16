@@ -527,6 +527,32 @@ fn tile_writing_stage(
                             .map(|(_, _, _, u, v)| (*u, *v))
                             .collect::<Vec<(f64, f64)>>();
 
+                        // Check if all UV coordinates are identical (would result in 0x0 texture)
+                        let (u_range, v_range) = if !uv_coords.is_empty() {
+                            let (min_u, max_u, min_v, max_v) = uv_coords.iter().fold(
+                                (f64::MAX, f64::MIN, f64::MAX, f64::MIN),
+                                |(min_u, max_u, min_v, max_v), &(u, v)| {
+                                    (min_u.min(u), max_u.max(u), min_v.min(v), max_v.max(v))
+                                },
+                            );
+                            let u_range = max_u - min_u;
+                            let v_range = max_v - min_v;
+
+                            // Skip texture if UV coordinates are all identical (range too small)
+                            if u_range < 1e-9 || v_range < 1e-9 {
+                                feedback.warn(format!(
+                                    "Skipping texture for feature {feature_id}, polygon {poly_count}: \
+                                     UV coordinates are identical (u_range={u_range:.3e}, v_range={v_range:.3e}), \
+                                     which would result in a 0-sized texture image."
+                                ));
+                                continue;
+                            }
+
+                            (u_range, v_range)
+                        } else {
+                            (0.0, 0.0)
+                        };
+
                         let texture_uri = base_texture.uri.to_file_path().unwrap();
                         let texture_size = texture_size_cache.get_or_insert(&texture_uri);
 
@@ -542,6 +568,22 @@ fn tile_writing_stage(
                         let geom_error = tiling::geometric_error(tile_zoom, tile_y);
                         let factor = apply_downsample_factor(geom_error, downsample_scale as f32);
                         let downsample_factor = DownsampleFactor::new(&factor);
+
+                        // Calculate the expected cropped texture size
+                        let cropped_width = (texture_size.0 as f64 * u_range * factor as f64).max(0.0) as u32;
+                        let cropped_height = (texture_size.1 as f64 * v_range * factor as f64).max(0.0) as u32;
+
+                        // Skip texture if cropped dimensions would be zero or too small
+                        if cropped_width == 0 || cropped_height == 0 {
+                            feedback.warn(format!(
+                                "Skipping texture for feature {feature_id}, polygon {poly_count}: \
+                                 Cropped texture dimensions are zero (width={cropped_width}, height={cropped_height}). \
+                                 UV range: u={u_range:.6}, v={v_range:.6}, original size: {}x{}, factor: {factor:.3}",
+                                texture_size.0, texture_size.1
+                            ));
+                            continue;
+                        }
+
                         let cropped_texture = PolygonMappedTexture::new(
                             &texture_uri,
                             texture_size,
