@@ -509,9 +509,10 @@ impl DataSink for GltfSink {
                             let final_width = (buffered_width as f32 * downsample_scale).max(0.0) as u32;
                             let final_height = (buffered_height as f32 * downsample_scale).max(0.0) as u32;
 
-                            // Skip texture if final dimensions would be too small (< 4 pixels)
-                            // JPEG encoder requires reasonable dimensions
-                            const MIN_TEXTURE_SIZE: u32 = 4;
+                            // Skip texture if final dimensions would be too small (< 16 pixels)
+                            // JPEG encoder processes in blocks (typically 8x8 or 16x16 DCT blocks)
+                            // Textures smaller than 16 pixels in either dimension can cause encoding errors
+                            const MIN_TEXTURE_SIZE: u32 = 16;
                             if final_width < MIN_TEXTURE_SIZE || final_height < MIN_TEXTURE_SIZE {
                                 feedback.warn(format!(
                                     "Skipping texture for feature {feature_id}, polygon {poly_count}: \

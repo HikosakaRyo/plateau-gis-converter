@@ -583,9 +583,10 @@ fn tile_writing_stage(
                         let final_width = (buffered_width as f32 * factor).max(0.0) as u32;
                         let final_height = (buffered_height as f32 * factor).max(0.0) as u32;
 
-                        // Skip texture if final dimensions would be too small (< 4 pixels)
-                        // WebP encoder requires reasonable dimensions
-                        const MIN_TEXTURE_SIZE: u32 = 4;
+                        // Skip texture if final dimensions would be too small (< 16 pixels)
+                        // WebP encoder uses VP8 codec which processes in 16x16 or 8x8 blocks
+                        // Textures smaller than 16 pixels in either dimension can cause encoding errors
+                        const MIN_TEXTURE_SIZE: u32 = 16;
                         if final_width < MIN_TEXTURE_SIZE || final_height < MIN_TEXTURE_SIZE {
                             feedback.warn(format!(
                                 "Skipping texture for feature {feature_id}, polygon {poly_count}: \
