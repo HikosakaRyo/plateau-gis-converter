@@ -466,11 +466,12 @@ impl DataSink for GltfSink {
                                 let v_range = max_v - min_v;
 
                                 // Skip texture if UV coordinates are all identical (range too small)
-                                if u_range < 1e-9 || v_range < 1e-9 {
+                                // Use a threshold of 0.001 to avoid very small textures
+                                if u_range < 0.001 || v_range < 0.001 {
                                     feedback.warn(format!(
                                         "Skipping texture for feature {feature_id}, polygon {poly_count}: \
-                                         UV coordinates are identical (u_range={u_range:.3e}, v_range={v_range:.3e}), \
-                                         which would result in a 0-sized texture image."
+                                         UV coordinates range is too small (u_range={u_range:.3e}, v_range={v_range:.3e}), \
+                                         which would result in a 0-sized or 1-pixel texture image."
                                     ));
                                     continue;
                                 }
@@ -495,16 +496,29 @@ impl DataSink for GltfSink {
 
                             let downsample_factor = DownsampleFactor::new(&downsample_scale);
 
-                            // Calculate the expected cropped texture size
-                            let cropped_width = (texture_size.0 as f64 * u_range * downsample_scale as f64).max(0.0) as u32;
-                            let cropped_height = (texture_size.1 as f64 * v_range * downsample_scale as f64).max(0.0) as u32;
+                            // Calculate the expected cropped texture size (without buffer)
+                            let cropped_width_raw = (texture_size.0 as f64 * u_range).max(0.0) as u32;
+                            let cropped_height_raw = (texture_size.1 as f64 * v_range).max(0.0) as u32;
 
-                            // Skip texture if cropped dimensions would be zero or too small
-                            if cropped_width == 0 || cropped_height == 0 {
+                            // Atlas packer adds a buffer of 2 pixels on each side (total 4 pixels per dimension)
+                            const ATLAS_BUFFER: u32 = 2;
+                            let buffered_width = cropped_width_raw + ATLAS_BUFFER * 2;
+                            let buffered_height = cropped_height_raw + ATLAS_BUFFER * 2;
+
+                            // Calculate final size after downsampling
+                            let final_width = (buffered_width as f32 * downsample_scale).max(0.0) as u32;
+                            let final_height = (buffered_height as f32 * downsample_scale).max(0.0) as u32;
+
+                            // Skip texture if final dimensions would be too small (< 4 pixels)
+                            // JPEG encoder requires reasonable dimensions
+                            const MIN_TEXTURE_SIZE: u32 = 4;
+                            if final_width < MIN_TEXTURE_SIZE || final_height < MIN_TEXTURE_SIZE {
                                 feedback.warn(format!(
                                     "Skipping texture for feature {feature_id}, polygon {poly_count}: \
-                                     Cropped texture dimensions are zero (width={cropped_width}, height={cropped_height}). \
-                                     UV range: u={u_range:.6}, v={v_range:.6}, original size: {}x{}, scale: {downsample_scale:.3}",
+                                     Final texture dimensions are too small (width={final_width}, height={final_height}). \
+                                     UV range: u={u_range:.6}, v={v_range:.6}, original size: {}x{}, \
+                                     cropped: {cropped_width_raw}x{cropped_height_raw}, \
+                                     buffered: {buffered_width}x{buffered_height}, scale: {downsample_scale:.3}",
                                     texture_size.0, texture_size.1
                                 ));
                                 continue;
